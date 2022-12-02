@@ -4,10 +4,10 @@ project for Berkeley CS182/282A.
 Fo run the code, make sure you have TensorDatasets named "train_dataset.pt" and "dev_dataset.pt" at the root dir (set to the parent dir). 
 
 Follow the following commands:
-    python main.py --task mae
+    ./run_mae.sh
 to run masked autoencoding task,
 
 then, model will save the pre-trained ViT model at "root/mae_pretrained.pt"
 run
-    python main.py --task seg
+    ./run_seg.sh
 to run the segmentation task.
