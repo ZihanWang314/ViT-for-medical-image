@@ -82,7 +82,6 @@ class MaskedAutoEncoder(nn.Module):
 
         self.encoder = encoder
         self.decoder = decoder
-
         self.encoder_input_projection = nn.Linear(patch_size * patch_size * patch_size, encoder_embedding_dim)
         self.decoder_input_projection = nn.Linear(encoder_embedding_dim, decoder_embedding_dim)
         self.decoder_output_projection = nn.Linear(decoder_embedding_dim, patch_size * patch_size * patch_size)
