@@ -10,6 +10,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
+from augmentation import augment_data
 
 import torchvision
 import torchvision.transforms as transforms
@@ -21,6 +22,7 @@ import os
 # import skimage.transform as skTrans
 import numpy as np
 import argparse
+
 
 from utils import patchify, unpatchify, random_masking, restore_masked
 from models import Transformer, MaskedAutoEncoder, SegmentationMAE
@@ -38,6 +40,7 @@ parser.add_argument('--num_epoches', type=int, default=100)
 parser.add_argument('--exp_name', type=str, default='exp_log')
 parser.add_argument('--gpu_id', type=int, default=0)
 parser.add_argument('--load_pretraining', action='store_true')
+parser.add_argument('--data_augmentation', action='store_true')
 args = parser.parse_args()
 
 
@@ -87,9 +90,14 @@ if args.task == 'mae':
         data_iterator = tqdm(trainloader)
         for x, y in data_iterator:
             total_steps += 1
+            if args.data_augmentation:
+                x = torch.tensor(np.concatenate(augment_data(x.numpy())))
+                y = torch.concat([y for _ in range(4)])
+
             x = x.to(torch_device)
             image_patches = patchify(x, patch_size=model.patch_size)
             predicted_patches, mask = model(x)
+                
             loss = torch.sum(torch.mean(torch.square(image_patches - predicted_patches), dim=-1) * mask) / mask.sum()
             optimizer.zero_grad()
             loss.backward()
@@ -116,7 +124,7 @@ elif args.task == 'seg':
         patch_size=8,
         num_patches=64
     )
-    if not args.load_pretraining:
+    if args.load_pretraining:
         mae.load_state_dict(torch.load(os.path.join(args.exp_name, "mae_pretrained.pt")))
 
     # Initilize classification model; set detach=True to only update the linear classifier. 
@@ -140,7 +148,11 @@ elif args.task == 'seg':
         data_iterator = tqdm(trainloader)
         for x, y in data_iterator:
             total_steps += 1
-            x, y = x.to(torch_device), y.to(torch_device).float()
+            if args.data_augmentation:
+                x = torch.tensor(np.concatenate(augment_data(x.numpy())))
+                y = torch.concat([y for _ in range(4)])
+            x, y = x.to(torch_device).float(), y.to(torch_device).float()
+
             logits = model(x)
             loss = torch.mean(F.binary_cross_entropy_with_logits(logits, y))
             iou = ((logits > 0) & (y == 1)).count_nonzero() / ((logits > 0) | (y == 1)).count_nonzero()

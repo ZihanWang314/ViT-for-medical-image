@@ -1,36 +1,38 @@
 import numpy as np
+import random
 # import matplotlib.pyplot as plt
 # import nibabel as nib
 
 # Augmentation functions
 def data_transformation(arr: np.ndarray):
-    """Augment a 3D array by mirroring and rotating it."""
+    """Augment 3D arrays by mirroring and rotating them."""
     # declare result: list of nd.array
+    assert len(arr.shape) == 4
     result = [arr]
 
     # mirror along x axis
-    result.append(np.flip(arr, axis=0))
-
-    # mirror along y axis
     result.append(np.flip(arr, axis=1))
 
-    # mirror along z axis
+    # mirror along y axis
     result.append(np.flip(arr, axis=2))
 
+    # mirror along z axis
+    result.append(np.flip(arr, axis=3))
+
     # rotate along x axis
+    result.append(np.rot90(arr, k=1, axes=(2, 3)))
+    result.append(np.rot90(arr, k=2, axes=(2, 3)))
+    result.append(np.rot90(arr, k=3, axes=(2, 3)))
+
+    # rotate along y axis
+    result.append(np.rot90(arr, k=1, axes=(1, 3)))
+    result.append(np.rot90(arr, k=2, axes=(1, 3)))
+    result.append(np.rot90(arr, k=3, axes=(1, 3)))
+
+    # rotate along z axis
     result.append(np.rot90(arr, k=1, axes=(1, 2)))
     result.append(np.rot90(arr, k=2, axes=(1, 2)))
     result.append(np.rot90(arr, k=3, axes=(1, 2)))
-
-    # rotate along y axis
-    result.append(np.rot90(arr, k=1, axes=(0, 2)))
-    result.append(np.rot90(arr, k=2, axes=(0, 2)))
-    result.append(np.rot90(arr, k=3, axes=(0, 2)))
-
-    # rotate along z axis
-    result.append(np.rot90(arr, k=1, axes=(0, 1)))
-    result.append(np.rot90(arr, k=2, axes=(0, 1)))
-    result.append(np.rot90(arr, k=3, axes=(0, 1)))
     
     return result
 
@@ -41,4 +43,5 @@ def add_gaussian(arr: np.ndarray):
 def augment_data(arr: np.ndarray):
     """Augment a 3D array by mirroring and rotating it and adding Gaussian noise."""
     l = data_transformation(arr)
-    return l + [add_gaussian(i) for i in l]
+    l = l + [add_gaussian(i) for i in l]
+    return random.sample(l, 4)
