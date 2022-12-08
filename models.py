@@ -240,8 +240,8 @@ class RegressionMAE(nn.Module):
         """
         # BEGIN YOUR CODE
         mae_output = self.mae.forward_encoder_representation(images)
-        output_reg = self.output_reg(mae_output)
-        output_class = self.output_class(mae_output)
+        output_reg = self.output_reg(mae_output[:, 0])
+        output_class = self.output_class(mae_output[:, 0])
         return output_reg, output_class
         # END YOUR CODE
 
