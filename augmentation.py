@@ -40,8 +40,29 @@ def add_gaussian(arr: np.ndarray):
     """Add Gaussian noise to a 3D array."""
     return arr + np.random.normal(0, 0.01, arr.shape)
 
-def augment_data(arr: np.ndarray):
+def augment_data(arr: np.ndarray, gaussian):
     """Augment a 3D array by mirroring and rotating it and adding Gaussian noise."""
     l = data_transformation(arr)
-    l = l + [add_gaussian(i) for i in l]
-    return random.sample(l, 4)
+    if gaussian:
+        l = l + [add_gaussian(i) for i in l]
+    else:
+        l = l + [l[0]]
+    return l
+
+if __name__ == "__main__":
+    import torch
+    from tqdm import tqdm
+    train_dataset = torch.load('../train_dataset.pt')
+    x_aug = []
+    y_aug = []
+    for x, y in tqdm(train_dataset):
+        x = augment_data(x.unsqueeze(0).numpy(), gaussian=True)
+        y = augment_data(y.unsqueeze(0).numpy(), gaussian=False)
+        x_y = list(zip(x, y))
+        x_y = random.sample(x_y, 4)
+        x_aug += [i[0] for i in x_y]
+        y_aug += [i[1] for i in x_y]
+    x_aug = torch.tensor(np.concatenate(x_aug), dtype=float)
+    y_aug = torch.tensor(np.concatenate(y_aug), dtype=float)
+    train_augmented_dataset = torch.utils.data.TensorDataset(x_aug, y_aug)
+    torch.save(train_augmented_dataset, '../train_dataset_augmented.pt')

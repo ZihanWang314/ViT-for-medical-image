@@ -25,7 +25,7 @@ import argparse
 
 
 from utils import patchify, unpatchify, random_masking, restore_masked
-from models import Transformer, MaskedAutoEncoder, SegmentationMAE
+from models import Transformer, MaskedAutoEncoder, SegmentationMAE, RegressionMAE
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--task', type=str)
@@ -49,14 +49,18 @@ if not os.path.exists(args.exp_name):
 
 
 torch_device = f'cuda:{args.gpu_id}' if torch.cuda.is_available() else 'cpu'
+print(f'using device: cuda:{args.gpu_id}')
 root_folder = r".."
 
 batch_size = args.batch_size
 
-trainset = torch.load(os.path.join(root_folder,'train_dataset.pt'))
+if args.data_augmentation:
+    trainset = torch.load(os.path.join(root_folder,'train_dataset_augmented.pt'))
+else:
+    trainset = torch.load(os.path.join(root_folder,'train_dataset.pt'))
+testset = torch.load(os.path.join(root_folder, 'dev_dataset.pt'))
 trainloader = torch.utils.data.DataLoader(trainset, batch_size=batch_size,
                                           shuffle=True, num_workers=2)
-testset = torch.load(os.path.join(root_folder, 'dev_dataset.pt'))
 testloader = torch.utils.data.DataLoader(testset, batch_size=batch_size,
                                          shuffle=False, num_workers=2)
                                         
@@ -90,9 +94,6 @@ if args.task == 'mae':
         data_iterator = tqdm(trainloader)
         for x, y in data_iterator:
             total_steps += 1
-            if args.data_augmentation:
-                x = torch.tensor(np.concatenate(augment_data(x.numpy())))
-                y = torch.concat([y for _ in range(4)])
 
             x = x.to(torch_device)
             image_patches = patchify(x, patch_size=model.patch_size)
@@ -125,10 +126,13 @@ elif args.task == 'seg':
         num_patches=64
     )
     if args.load_pretraining:
-        mae.load_state_dict(torch.load(os.path.join(args.exp_name, "mae_pretrained.pt")))
+        pass
+        # mae.load_state_dict(torch.load(os.path.join(args.exp_name, "mae_pretrained.pt")))
 
     # Initilize classification model; set detach=True to only update the linear classifier. 
     model = SegmentationMAE(mae, detach=True)
+    # if args.load_pretraining:
+    #     model.load_state_dict(torch.load(os.path.join(root_folder, "seg_best.pt")))
     model.to(torch_device)
 
     # You may want to tune these hyperparameters to get better performance
@@ -145,12 +149,11 @@ elif args.task == 'seg':
     epoch_iterator = trange(num_epochs)
     for epoch in epoch_iterator:
         # Train
+        if epoch == num_epochs // 2:
+            optimizer = optim.AdamW(model.parameters(), lr=args.lr, betas=(0.9, 0.98), weight_decay=1e-5)
         data_iterator = tqdm(trainloader)
         for x, y in data_iterator:
             total_steps += 1
-            if args.data_augmentation:
-                x = torch.tensor(np.concatenate(augment_data(x.numpy())))
-                y = torch.concat([y for _ in range(4)])
             x, y = x.to(torch_device).float(), y.to(torch_device).float()
 
             logits = model(x)
@@ -171,7 +174,7 @@ elif args.task == 'seg':
         val_dice = []
         model.eval()
         for x, y in testloader:
-            x, y = x.to(torch_device), y.to(torch_device).float()
+            x, y = x.to(torch_device).float(), y.to(torch_device).float()
             with torch.no_grad():
                 logits = model(x)
             iou = ((logits > 0) & (y == 1)).count_nonzero() / ((logits > 0) | (y == 1)).count_nonzero()
@@ -185,6 +188,115 @@ elif args.task == 'seg':
         # Save best model
         if np.mean(val_dice) > best_val_dice:
             best_val_dice = np.mean(val_dice)
+            torch.save(model.state_dict(), os.path.join(root_folder, "seg_best.pt"))
+
+        epoch_iterator.set_postfix(val_dice=np.mean(val_dice), best_val_dice=best_val_dice)
+
+    if args.load_pretraining:
+        plt.plot(losses)
+        plt.title('Linear Classification Train Loss')
+        plt.savefig(os.path.join(args.exp_name, 'seg_losses'))
+        plt.clf()
+        plt.plot(train_dice)
+        plt.title('Linear Classification Train dice')
+        plt.savefig(os.path.join(args.exp_name, 'seg_train_dice'))
+        plt.clf()
+        plt.plot(all_val_dice)
+        plt.title('Linear Classification Val dice')
+        plt.savefig(os.path.join(args.exp_name, 'seg_val_dice'))
+        plt.clf()
+        print('plots have been saved to seg_losses.png, seg_train_dice.png and seg_val_dice.png')
+    else:
+        plt.plot(losses)
+        plt.title('Linear Classification Train Loss')
+        plt.savefig(os.path.join(args.exp_name, 'seg_losses_nopt'))
+        plt.clf()
+        plt.plot(train_dice)
+        plt.title('Linear Classification Train dice')
+        plt.savefig(os.path.join(args.exp_name, 'seg_train_dice_nopt'))
+        plt.clf()
+        plt.plot(all_val_dice)
+        plt.title('Linear Classification Val dice')
+        plt.savefig(os.path.join(args.exp_name, 'seg_val_dice_nopt'))
+        plt.clf()
+        print('plots have been saved to seg_losses_nopt.png, seg_train_dice_nopt.png and seg_val_dice_nopt.png')
+
+
+
+elif args.task == 'reg':
+    mae = MaskedAutoEncoder(
+        Transformer(embedding_dim=args.encoder_dim, n_heads=args.n_heads, n_layers=args.n_layers, feedforward_dim=args.ff_dim),
+        Transformer(embedding_dim=args.decoder_dim, n_heads=args.n_heads, n_layers=args.n_layers, feedforward_dim=args.ff_dim),
+        encoder_embedding_dim=args.encoder_dim, 
+        decoder_embedding_dim=args.decoder_dim,
+        patch_size=8,
+        num_patches=64
+    )
+    if args.load_pretraining:
+        mae.load_state_dict(torch.load(os.path.join(args.exp_name, "mae_pretrained.pt")))
+
+    # Initilize classification model; set detach=True to only update the linear classifier. 
+    model = RegressionMAE(mae, detach=True)
+    model.to(torch_device)
+
+    # You may want to tune these hyperparameters to get better performance
+    optimizer = optim.AdamW(model.parameters(), lr=args.lr, betas=(0.9, 0.95), weight_decay=1e-4)
+
+    total_steps = 0
+    num_epochs = args.num_epoches
+    train_logfreq = 100
+    losses = []
+    train_dice = []
+    all_val_dice = []
+    best_val_dice = 0
+
+    epoch_iterator = trange(num_epochs)
+    for epoch in epoch_iterator:
+        # Train
+        if epoch == num_epochs // 2:
+            optimizer = optim.AdamW(model.parameters(), lr=args.lr, betas=(0.9, 0.98), weight_decay=1e-5)
+            print('changing optimizer')
+        data_iterator = tqdm(trainloader)
+        for x, y in data_iterator:
+            total_steps += 1
+            y_reg, y_class = y
+            x, y_reg, y_class = x.to(torch_device).float(), y_reg.to(torch_device).float(), y_class.to(torch_device).float()
+
+            output_reg, output_class = model(x)
+            loss_reg = torch.mean(F.mse_loss(output_reg, y_reg))
+            loss_class = torch.mean(F.binary_cross_entropy_with_logits(output_class, y_class))
+            loss = (loss_reg + loss_class) / 2
+            iou = ((logits > 0) & (y == 1)).count_nonzero() / ((logits > 0) | (y == 1)).count_nonzero()
+            dice = 2 * iou / (iou + 1)
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+
+            data_iterator.set_postfix(loss=loss.item(), train_dice=dice.item())
+
+            if total_steps % train_logfreq == 0:
+                losses.append(loss.item())
+                train_dice.append(dice.item())
+
+        # Validation
+        val_dice = []
+        model.eval()
+        for x, y in testloader:
+            x, y = x.to(torch_device).float(), y.to(torch_device).float()
+            with torch.no_grad():
+                logits = model(x)
+            iou = ((logits > 0) & (y == 1)).count_nonzero() / ((logits > 0) | (y == 1)).count_nonzero()
+            dice = 2 * iou / (iou + 1)
+            val_dice.append(dice.item())
+
+        model.train()
+
+        all_val_dice.append(np.mean(val_dice))
+
+        # Save best model
+        if np.mean(val_dice) > best_val_dice:
+            best_val_dice = np.mean(val_dice)
+            torch.save(model.state_dict(), os.path.join(root_folder, "seg_best.pt"))
 
         epoch_iterator.set_postfix(val_dice=np.mean(val_dice), best_val_dice=best_val_dice)
 

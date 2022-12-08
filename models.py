@@ -207,3 +207,42 @@ class SegmentationMAE(nn.Module):
         # END YOUR CODE
 
 
+
+class RegressionMAE(nn.Module):
+    """A linear classifier is trained on self-supervised representations learned by MAE. 
+    Args:
+        n_classes: number of classes
+        mae: mae model
+        embedding_dim: embedding dimension of mae output
+        detach: if True, only the classification head is updated.
+    """
+    def __init__(self, mae, embedding_dim=256, detach=False):
+        super().__init__()
+        self.embedding_dim = embedding_dim
+        self.mae = mae
+        self.mae.mask_ratio = 0
+        """
+        When self.detach=True, use linear classification, when self.detach=False,
+        use full finetuning.
+        """
+        self.output_reg = nn.Linear(embedding_dim, 4)
+        self.output_class = nn.Linear(embedding_dim, 1)
+        self.detach = detach
+
+    def forward(self, images):
+        """
+        Args:
+            Images: batch of images
+        Returns:
+            logits: batch of logits from the ouput_head
+        Remember to detach the representations if self.detach=True, and 
+        Remember that we do not use masking here.
+        """
+        # BEGIN YOUR CODE
+        mae_output = self.mae.forward_encoder_representation(images)
+        output_reg = self.output_reg(mae_output)
+        output_class = self.output_class(mae_output)
+        return output_reg, output_class
+        # END YOUR CODE
+
+
